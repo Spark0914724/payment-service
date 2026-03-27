@@ -4,8 +4,8 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-03-28
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSON, UUID
 
 revision = "0001"
@@ -25,12 +25,7 @@ def upgrade() -> None:
         sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
         sa.Column("idempotency_key", sa.String(255), nullable=False),
         sa.Column("webhook_url", sa.Text, nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False,
-        ),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_index("ix_payments_idempotency_key", "payments", ["idempotency_key"], unique=True)
@@ -41,12 +36,7 @@ def upgrade() -> None:
         sa.Column("event_type", sa.String(100), nullable=False),
         sa.Column("payload", JSON, nullable=False),
         sa.Column("published", sa.Boolean, nullable=False, server_default="false"),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False,
-        ),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
     )
 

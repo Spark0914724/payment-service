@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from aio_pika import DeliveryMode, Message
 from sqlalchemy import select
 
-from app.core.config import settings
 from app.core.broker import get_connection
+from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.outbox import OutboxMessage
 
@@ -43,7 +43,6 @@ async def publish_pending_messages() -> None:
                 )
                 msg.published = True
                 msg.published_at = datetime.now(timezone.utc)
-                logger.info("Published outbox message %s", msg.id)
             except Exception as e:
                 logger.error("Failed to publish outbox message %s: %s", msg.id, e)
 
@@ -52,10 +51,9 @@ async def publish_pending_messages() -> None:
 
 
 async def run_outbox_scheduler() -> None:
-    logger.info("Outbox scheduler started, interval=%ss", settings.OUTBOX_INTERVAL)
     while True:
         try:
             await publish_pending_messages()
         except Exception as e:
-            logger.error("Outbox scheduler error: %s", e)
+            logger.error("Outbox error: %s", e)
         await asyncio.sleep(settings.OUTBOX_INTERVAL)

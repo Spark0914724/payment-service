@@ -21,25 +21,22 @@ MAX_RETRIES = 3
 
 
 async def send_webhook(url: str, payload: dict) -> None:
-    """Send webhook with exponential backoff, 3 attempts."""
     delay = 1
     async with httpx.AsyncClient(timeout=10) as client:
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 resp = await client.post(url, json=payload)
                 resp.raise_for_status()
-                logger.info("Webhook delivered to %s on attempt %d", url, attempt)
                 return
             except Exception as e:
                 logger.warning("Webhook attempt %d/%d failed: %s", attempt, MAX_RETRIES, e)
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(delay)
                     delay *= 2
-    logger.error("Webhook delivery exhausted after %d attempts to %s", MAX_RETRIES, url)
+    logger.error("Webhook delivery failed after %d attempts to %s", MAX_RETRIES, url)
 
 
 def get_retry_count(message: IncomingMessage) -> int:
-    """Read x-retry-count header from message, default 0."""
     headers = message.headers or {}
     return int(headers.get("x-retry-count", 0))
 
@@ -49,9 +46,7 @@ async def requeue_with_retry(
     message: IncomingMessage,
     retry_count: int,
 ) -> None:
-    """Re-publish message with incremented retry count and exponential delay."""
-    delay = (2 ** retry_count)  # 1s, 2s, 4s
-    logger.warning("Requeueing message, attempt %d/%d, delay %ds", retry_count + 1, MAX_RETRIES, delay)
+    delay = 2 ** retry_count
     await asyncio.sleep(delay)
 
     channel = await connection.channel()
@@ -75,15 +70,13 @@ async def process_message(message: IncomingMessage, connection: AbstractRobustCo
         payload = json.loads(message.body)
         payment_id = uuid.UUID(payload["payment_id"])
     except Exception as e:
-        logger.error("Invalid message body, sending to DLQ: %s", e)
+        logger.error("Invalid message body: %s", e)
         await message.reject(requeue=False)
         return
 
     try:
-        # Emulate processing: 2-5s delay, 90% success / 10% failure
         await asyncio.sleep(random.uniform(2, 5))
-        success = random.random() < 0.9
-        new_status = PaymentStatus.SUCCEEDED.value if success else PaymentStatus.FAILED.value
+        new_status = PaymentStatus.SUCCEEDED.value if random.random() < 0.9 else PaymentStatus.FAILED.value
 
         async with AsyncSessionLocal() as db:
             payment = await db.scalar(select(Payment).where(Payment.id == payment_id))
@@ -102,7 +95,7 @@ async def process_message(message: IncomingMessage, connection: AbstractRobustCo
                 payload["webhook_url"],
                 {
                     "payment_id": str(payment_id),
-                    "status": new_status,  # already a string value
+                    "status": new_status,
                     "processed_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
@@ -112,16 +105,15 @@ async def process_message(message: IncomingMessage, connection: AbstractRobustCo
     except Exception as e:
         logger.error("Error processing payment %s: %s", payment_id, e)
         if retry_count < MAX_RETRIES - 1:
-            await message.ack()  # ack original, re-publish with retry count
+            await message.ack()
             await requeue_with_retry(connection, message, retry_count)
         else:
-            logger.error("Payment %s exhausted retries, sending to DLQ", payment_id)
-            await message.reject(requeue=False)  # RabbitMQ routes to DLQ
+            logger.error("Payment %s exhausted retries, moving to DLQ", payment_id)
+            await message.reject(requeue=False)
 
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    logger.info("Consumer starting...")
 
     await setup_rabbitmq()
 
@@ -136,4 +128,4 @@ async def main() -> None:
 
         await queue.consume(on_message)
         logger.info("Consumer listening on payments.new")
-        await asyncio.Future()  # run forever
+        await asyncio.Future()

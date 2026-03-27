@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import verify_api_key
 from app.db.session import get_db
-from app.models.payment import Payment, PaymentStatus
 from app.models.outbox import OutboxMessage
+from app.models.payment import Payment, PaymentStatus
 from app.schemas.payment import PaymentCreate, PaymentCreateResponse, PaymentResponse
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -20,7 +20,6 @@ async def create_payment(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_api_key),
 ):
-    # Idempotency check
     existing = await db.scalar(
         select(Payment).where(Payment.idempotency_key == idempotency_key)
     )
@@ -42,8 +41,7 @@ async def create_payment(
         webhook_url=str(body.webhook_url) if body.webhook_url else None,
     )
     db.add(payment)
-
-    outbox = OutboxMessage(
+    db.add(OutboxMessage(
         id=uuid.uuid4(),
         event_type="payments.new",
         payload={
@@ -53,10 +51,7 @@ async def create_payment(
             "description": payment.description,
             "webhook_url": payment.webhook_url,
         },
-        published=False,
-    )
-    db.add(outbox)
-
+    ))
     await db.commit()
 
     return PaymentCreateResponse(

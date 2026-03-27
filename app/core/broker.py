@@ -18,27 +18,20 @@ async def get_connection() -> AbstractRobustConnection:
 
 
 async def setup_rabbitmq() -> None:
-    """Declare all exchanges, queues and bindings."""
     connection = await get_connection()
     async with connection.channel() as channel:
-        # Dead letter exchange
         dlx = await channel.declare_exchange("payments.dlx", type="direct", durable=True)
-
-        # Dead letter queue
         dlq = await channel.declare_queue("payments.dlq", durable=True)
         await dlq.bind(dlx, routing_key="payments.new")
 
-        # Main exchange
         exchange = await channel.declare_exchange("payments", type="direct", durable=True)
-
-        # Main queue with DLX configured
         queue = await channel.declare_queue(
             "payments.new",
             durable=True,
             arguments={
                 "x-dead-letter-exchange": "payments.dlx",
                 "x-dead-letter-routing-key": "payments.new",
-                "x-message-ttl": 60000,  # 60s per attempt before DLQ
+                "x-message-ttl": 60000,
             },
         )
         await queue.bind(exchange, routing_key="payments.new")
