@@ -83,7 +83,7 @@ async def process_message(message: IncomingMessage, connection: AbstractRobustCo
         # Emulate processing: 2-5s delay, 90% success / 10% failure
         await asyncio.sleep(random.uniform(2, 5))
         success = random.random() < 0.9
-        new_status = PaymentStatus.SUCCEEDED if success else PaymentStatus.FAILED
+        new_status = PaymentStatus.SUCCEEDED.value if success else PaymentStatus.FAILED.value
 
         async with AsyncSessionLocal() as db:
             payment = await db.scalar(select(Payment).where(Payment.id == payment_id))
@@ -102,7 +102,7 @@ async def process_message(message: IncomingMessage, connection: AbstractRobustCo
                 payload["webhook_url"],
                 {
                     "payment_id": str(payment_id),
-                    "status": new_status,
+                    "status": new_status,  # already a string value
                     "processed_at": datetime.now(timezone.utc).isoformat(),
                 },
             )

@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 from app.models.payment import Currency, PaymentStatus
 
@@ -17,12 +17,13 @@ class PaymentCreate(BaseModel):
 
 
 class PaymentResponse(BaseModel):
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
     id: uuid.UUID
     amount: Decimal
     currency: Currency
     description: str | None
+    # ORM column is named metadata_, exposed as metadata in JSON
     metadata: dict[str, Any] | None = Field(None, alias="metadata_")
     status: PaymentStatus
     idempotency_key: str
