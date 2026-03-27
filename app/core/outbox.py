@@ -3,10 +3,11 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from aio_pika import DeliveryMode, Message, connect_robust
+from aio_pika import DeliveryMode, Message
 from sqlalchemy import select
 
 from app.core.config import settings
+from app.core.broker import get_connection
 from app.db.session import AsyncSessionLocal
 from app.models.outbox import OutboxMessage
 
@@ -26,34 +27,28 @@ async def publish_pending_messages() -> None:
         if not messages:
             return
 
-        connection = await connect_robust(settings.RABBITMQ_URL)
-        async with connection:
-            channel = await connection.channel()
-            exchange = await channel.declare_exchange(
-                "payments", type="direct", durable=True
-            )
-            await channel.declare_queue(
-                "payments.new", durable=True, arguments={"x-dead-letter-exchange": "payments.dlx"}
-            )
-            await exchange.bind(queue="payments.new", routing_key="payments.new")
+        connection = await get_connection()
+        channel = await connection.channel()
+        exchange = await channel.get_exchange("payments")
 
-            for msg in messages:
-                try:
-                    await exchange.publish(
-                        Message(
-                            body=json.dumps(msg.payload).encode(),
-                            delivery_mode=DeliveryMode.PERSISTENT,
-                            message_id=str(msg.id),
-                        ),
-                        routing_key="payments.new",
-                    )
-                    msg.published = True
-                    msg.published_at = datetime.now(timezone.utc)
-                    logger.info("Published outbox message %s", msg.id)
-                except Exception as e:
-                    logger.error("Failed to publish outbox message %s: %s", msg.id, e)
+        for msg in messages:
+            try:
+                await exchange.publish(
+                    Message(
+                        body=json.dumps(msg.payload).encode(),
+                        delivery_mode=DeliveryMode.PERSISTENT,
+                        message_id=str(msg.id),
+                    ),
+                    routing_key="payments.new",
+                )
+                msg.published = True
+                msg.published_at = datetime.now(timezone.utc)
+                logger.info("Published outbox message %s", msg.id)
+            except Exception as e:
+                logger.error("Failed to publish outbox message %s: %s", msg.id, e)
 
         await db.commit()
+        await channel.close()
 
 
 async def run_outbox_scheduler() -> None:
